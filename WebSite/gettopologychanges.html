@@ -1,0 +1,202 @@
+﻿<!-- Copyright (c) Microsoft Corporation. All rights reserved. -->
+<!-- Licensed under the MIT license. -->
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <title>Get Changes in Digital Twins Topology</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <!-- Stylesheets requirements -->
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- Script requirements -->
+    <script src="https://code.jquery.com/jquery-latest.min.js"></script>
+    <script src='https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.5/jquery-ui.js'></script>
+    <script src="https://secure.aadcdn.microsoftonline-p.com/lib/1.0.0/js/adal.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@0.18.0/dist/axios.js"></script>
+    <script src="/scripts/signalr/browser/signalr.js"></script>
+    <script type="text/javascript">
+
+        axios.defaults.headers.post['Content-Type'] = 'application/json;charset=utf-8';
+        axios.defaults.headers.post['Access-Control-Allow-Origin'] = '*';
+
+        var config = {
+            clientId: "1ae24a3d-df36-481d-a1a6-91ba6c1722d7",
+            tenant: "marcoparenzan.onmicrosoft.com"
+        };
+
+        var token;
+
+        // https://github.com/AzureAD/azure-activedirectory-library-for-js/wiki/Config-authentication-context
+        // good article
+        // https://medium.com/@Usurer/azure-function-with-azure-ad-authentication-application-settings-and-adal-js-usage-example-ae0ef4bc47a9
+
+        var signalRFunctionUrl = "https://mpdigitaltwins101.azurewebsites.net";
+        if (document.location.href.indexOf("localhost") > 0) {
+            signalRFunctionUrl = "http://localhost:7071";
+        }
+        var invokeSignalR = (method, args) => {
+            var headers = {};
+
+            // headers["x-ms-client-principal-id"] = token;
+
+            return $.ajax({
+                method: "POST",
+                url: `${signalRFunctionUrl}/api/${method}`,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token,
+                    "x-ms-client-principal-id": token
+                },
+                data: JSON.stringify(args)
+            });
+
+            //            return axios.post(`${signalRFunctionUrl}/api/${method}`, JSON.stringify(args) || null, {
+            //                headers: headers
+            //            });
+        };
+
+        var ac = new AuthenticationContext(config);
+
+        ac.handleWindowCallback();
+        var user = ac.getCachedUser();
+
+        if (user === undefined || user === null) {
+            login();
+        }
+        else {
+            token = ac.getCachedToken(config.clientId);
+
+            setupSignalR();
+
+            request();
+        }
+
+        var signalr_connection = undefined;
+
+        function setupSignalR() {
+
+            invokeSignalR("GetSignalRInfo")
+                .then(resp => {
+                    signalr_connection = new signalR.HubConnectionBuilder()
+                        .withUrl(resp.url, {
+                            accessTokenFactory: () => resp.accessToken
+                        })
+                        .configureLogging(signalR.LogLevel.Information)
+                        .build();
+
+                    signalr_connection.on('topologychanges', function (item) {
+
+                        var body = $("#changes > tbody");
+                        body.append("<tr><td>" + item.LastModified + "</td><td>" + item.Name + "</td></tr>")
+
+                    });
+
+                    signalr_connection.start()
+                        .then(function (xxx) {
+
+                            // do something
+
+                        })
+                        .catch(function (error) {
+                            console.error(error.message);
+                        });
+
+                });
+
+        }
+
+        function login() {
+            ac.login();
+        }
+
+        function logout() {
+            user = undefined;
+            token = undefined;
+            ac.logOut();
+        }
+
+        function request() {
+
+            $.ajax({
+                method: "POST",
+                url: "https://mpdigitaltwins101.azurewebsites.net/api/GetChanges",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + token
+                },
+                success: function (data) {
+
+                    var body = $("#changes > tbody");
+                    $(data.items).each((i, item) => {
+                        body.append("<tr><td>" + item.Properties.LastModified + "</td><td>" + item.Name + "</td></tr>")
+                    });
+
+                },
+                error: function (data) {
+                    alert('Whoops, something went wrong.')
+                    console.info(data);
+                }
+            });
+        }
+
+    </script>
+
+</head>
+
+<body>
+    <header class="top-header">
+        <div class="top-header-container">
+            <a href="#" class="top-header-logo" aria-label="Logo">
+                <img src="https://img-prod-cms-rt-microsoft-com.akamaized.net/cms/api/am/imageFileData/RE1MmB8?ver=6c43g"
+                     alt="Placeholder with grey background and dimension watermark without any imagery">
+            </a>
+            <h1>Get Changes in Digital Twins Topology</h1>
+            <div class="top-header-login" id="loginContainer">
+                <div>
+                    <picture role="img" aria-label="Microsoft profile picture"></picture>
+                </div>
+                <div>
+                    <h5 id="username"></h5>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main class="main-area">
+        <section id="visualizer" class="visualizer">
+            <div class="table-container">
+
+                <table id="changes" class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Name</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-container">
+            <ol>
+                <li>
+                    <a href="https://www.azure.com">Azure</a>
+                </li>
+                <li>
+                    <a href="https://azure.microsoft.com/services/digital-twins/">Digital Twins</a>
+                </li>
+                <li>
+                    <a href="https://github.com/marcoparenzan/AzureDigitalTwins">GitHub</a>
+                </li>
+            </ol>
+        </div>
+    </footer>
+</body>
+
+</html>
